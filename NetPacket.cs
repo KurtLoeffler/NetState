@@ -1,0 +1,84 @@
+﻿using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.IO;
+
+namespace NetState
+{
+	public abstract class NetPacket
+	{
+		private static TypeIDManager<NetPacket> typeIDManager = new TypeIDManager<NetPacket>();
+
+		public float receivedTime { get; set; }
+		public NetEvent networkEvent { get; set; }
+		
+		public NetPacket()
+		{
+			receivedTime = Mathf.NegativeInfinity;
+		}
+
+		public static T ReadNext<T>(BinaryReader reader) where T : NetPacket
+		{
+			NetPacket packet = ReadNext(reader);
+
+			if (!typeof(T).IsAssignableFrom(packet.GetType()))
+			{
+				throw new System.Exception("Invalid packet type \""+packet.GetType()+"\" expected \""+typeof(T)+"\"");
+			}
+
+			return (T)packet;
+		}
+
+		public static NetPacket ReadNext(BinaryReader reader)
+		{
+			int packetTypeID = reader.ReadUInt16();
+			reader.BaseStream.Position -= 2;
+
+			NetPacket packet = typeIDManager.CreateInstance(packetTypeID);
+			packet.Deserialize(reader);
+
+			return packet;
+		}
+
+		public byte[] SerializeToByteArray()
+		{
+			MemoryStream stream = new MemoryStream();
+			BinaryWriter writer = new BinaryWriter(stream);
+
+			Serialize(writer);
+
+			byte[] bytes = stream.ToArray();
+
+			writer.Close();
+			stream.Close();
+
+			return bytes;
+		}
+
+		public void Serialize(BinaryWriter writer)
+		{
+			int id = typeIDManager.TypeToTypeID(GetType());
+			writer.Write((ushort)id);
+
+			OnSerialize(writer);
+		}
+
+		public void Deserialize(BinaryReader reader)
+		{
+			int packetTypeID = reader.ReadUInt16();
+			System.Type packetType = typeIDManager.TypeIDToType(packetTypeID);
+
+			if (packetType != GetType())
+			{
+				reader.BaseStream.Position -= 2;
+				throw new System.Exception("Unexpected PacketType \""+packetType+"\" expected \""+GetType()+"\"");
+			}
+
+			OnDeserialize(reader);
+		}
+
+		protected abstract void OnSerialize(BinaryWriter writer);
+		protected abstract void OnDeserialize(BinaryReader reader);
+	}
+}
