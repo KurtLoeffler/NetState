@@ -11,8 +11,14 @@ namespace NetState
 		public NetInterface netInterface;
 		public string serverAddress = "127.0.0.1";
 		public int serverPort;
+		public bool connectOnStart = true;
 
 		protected virtual void Awake()
+		{
+			SetupNetInterface();
+		}
+
+		protected virtual void SetupNetInterface()
 		{
 			netInterface = new NetInterface();
 			netInterface.onConnected += OnConnect;
@@ -21,6 +27,14 @@ namespace NetState
 		}
 
 		protected virtual void Start()
+		{
+			if (connectOnStart)
+			{
+				Connect();
+			}
+		}
+
+		public void Connect()
 		{
 			netInterface.StartHost(0, 1);
 			netInterface.Connect(serverAddress, serverPort);

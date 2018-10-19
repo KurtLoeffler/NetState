@@ -10,6 +10,13 @@ namespace NetState
 {
 	public class NetInterface
 	{
+		public class ChannelInfo
+		{
+			public string name;
+			public int id;
+			public QosType type;
+		}
+
 		public delegate void OnConnectedDelegate(NetEvent networkEvent);
 		public event OnConnectedDelegate onConnected;
 		public delegate void OnDisconnectedDelegate(NetEvent networkEvent);
@@ -21,9 +28,8 @@ namespace NetState
 		public int hostID { get; private set; }
 		public int port { get; private set; }
 
-		public int snapshotChannel { get; private set; }
-		public int clientInputChannel { get; private set; }
-		public int eventChannel { get; private set; }
+		private Dictionary<int, ChannelInfo> channelIDToInfoDict = new Dictionary<int, ChannelInfo>();
+		private Dictionary<string, ChannelInfo> channelNameToInfoDict = new Dictionary<string, ChannelInfo>();
 
 		public bool isConnected { get; private set; }
 
@@ -63,9 +69,10 @@ namespace NetState
 			NetworkTransport.Init();
 
 			ConnectionConfig config = new ConnectionConfig();
-			snapshotChannel = config.AddChannel(QosType.Unreliable);
-			clientInputChannel = config.AddChannel(QosType.Reliable);
-			eventChannel = config.AddChannel(QosType.ReliableSequenced);
+			foreach (var channelInfo in channelNameToInfoDict.Values)
+			{
+				channelInfo.id = config.AddChannel(channelInfo.type);
+			}
 			HostTopology topology = new HostTopology(config, maxConnections);
 
 			bool simulateLatency = false;
@@ -101,6 +108,23 @@ namespace NetState
 			{
 				Debug.LogError(networkError);
 			}
+		}
+
+		public void AddChannel(string name, QosType type)
+		{
+			channelNameToInfoDict.Add(name, new ChannelInfo { name = name, id = -1, type = type });
+		}
+
+		public ChannelInfo GetChannel(string name)
+		{
+			channelNameToInfoDict.TryGetValue(name, out var value);
+			return value;
+		}
+
+		public ChannelInfo GetChannel(int id)
+		{
+			channelIDToInfoDict.TryGetValue(id, out var value);
+			return value;
 		}
 
 		public NetworkError Send(int connectionID, int channelID, string text)
@@ -168,7 +192,7 @@ namespace NetState
 			{
 				if (networkEvent.error != NetworkError.Ok)
 				{
-					Debug.LogError("NetworkEvent Error: "+networkEvent.error+" "+hostID+" "+connectionID+" "+snapshotChannel);
+					Debug.LogError("NetworkEvent Error: "+networkEvent.error+" "+hostID+" "+connectionID);
 				}
 
 				if (networkEvent.eventType == NetworkEventType.ConnectEvent)
@@ -183,6 +207,10 @@ namespace NetState
 
 					isConnected = false;
 					connectionID = -1;
+					foreach (var channelInfo in channelNameToInfoDict.Values)
+					{
+						channelInfo.id = -1;
+					}
 				}
 				else if (networkEvent.eventType == NetworkEventType.DataEvent)
 				{

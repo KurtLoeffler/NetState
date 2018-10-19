@@ -12,6 +12,7 @@ namespace NetState
 		public NetInterface netInterface;
 		public int desiredPort;
 		public int maxConnections = 12;
+		public bool startServerOnStart = true;
 
 		public List<ClientInfo> clientInfos = new List<ClientInfo>();
 		public ClientInfo GetClientInfo(int id)
@@ -21,11 +22,27 @@ namespace NetState
 
 		protected virtual void Awake()
 		{
+			SetupNetInterface();
+		}
+
+		protected virtual void Start()
+		{
+			if (startServerOnStart)
+			{
+				StartServer();
+			}
+		}
+
+		protected virtual void SetupNetInterface()
+		{
 			netInterface = new NetInterface();
 			netInterface.onConnected += OnClientConnect;
 			netInterface.onDisconnected += OnClientDisconnect;
 			netInterface.onPacket += OnClientPacket;
+		}
 
+		public void StartServer()
+		{
 			netInterface.StartHost(desiredPort, maxConnections);
 		}
 
