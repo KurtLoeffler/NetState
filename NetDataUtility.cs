@@ -48,6 +48,11 @@ namespace NetState
 			return data;
 		}
 
+		public static void Deserialize(INetData netData, BinaryReader reader)
+		{
+			Deserialize(ref netData, reader);
+		}
+
 		public static void Deserialize(ref INetData netData, BinaryReader reader)
 		{
 			ushort readTypeID = reader.ReadUInt16();
