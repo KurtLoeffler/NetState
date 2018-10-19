@@ -50,10 +50,10 @@ namespace NetState
 			}
 		}
 
-		public Type TypeIDToType(int packetTypeID)
+		public Type TypeIDToType(int typeID)
 		{
 			Type type;
-			typeIDToType.TryGetValue(packetTypeID, out type);
+			typeIDToType.TryGetValue(typeID, out type);
 			return type;
 		}
 
