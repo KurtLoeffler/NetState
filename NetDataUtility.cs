@@ -10,15 +10,28 @@ using UnityEngine;
 
 namespace NetState
 {
-	public interface INetData
-	{
-
-	}
-
 	public static class NetDataUtility
 	{
 		public static TypeIDManager<INetData> typeIDManager = new TypeIDManager<INetData>();
+		private static Dictionary<Type, List<FieldInfo>> typeToFieldInfoDict = new Dictionary<Type, List<FieldInfo>>();
 
+		private static List<FieldInfo> GetSerializedFieldInfos(Type type)
+		{
+			if (!typeToFieldInfoDict.TryGetValue(type, out var fieldInfos))
+			{
+				fieldInfos = new List<FieldInfo>();
+				var fieldInfoArray = type.GetFields(BindingFlags.Instance|BindingFlags.Public);
+				foreach (var field in fieldInfoArray)
+				{
+					if (field.GetCustomAttribute<NonSerializedAttribute>(true) == null)
+					{
+						fieldInfos.Add(field);
+					}
+				}
+				typeToFieldInfoDict.Add(type, fieldInfos);
+			}
+			return fieldInfos;
+		}
 		public static void Serialize(INetData netData, BinaryWriter writer)
 		{
 			Type type = netData.GetType();
@@ -31,7 +44,8 @@ namespace NetState
 		public static void SerializeObject(object obj, BinaryWriter writer)
 		{
 			Type type = obj.GetType();
-			var fieldInfos = type.GetFields(BindingFlags.Instance|BindingFlags.Public);
+			var fieldInfos = GetSerializedFieldInfos(type);
+
 			foreach (var field in fieldInfos)
 			{
 				var value = field.GetValue(obj);
@@ -77,7 +91,7 @@ namespace NetState
 		private static void DeserializeObject(object obj, BinaryReader reader)
 		{
 			Type type = obj.GetType();
-			var fieldInfos = type.GetFields(BindingFlags.Instance|BindingFlags.Public);
+			var fieldInfos = GetSerializedFieldInfos(type);
 			foreach (var field in fieldInfos)
 			{
 				field.SetValue(obj, ReadValue(reader, field.FieldType));
@@ -151,12 +165,14 @@ namespace NetState
 			{
 				output = reader.ReadString();
 			}
-			/*
-			else if (type == typeof(NetStateObject))
+			else if (type == typeof(Vector2Int))
 			{
-				output = reader.ReadUInt16();
+				output = new Vector2Int(reader.ReadInt32(), reader.ReadInt32());
 			}
-			*/
+			else if (type == typeof(Vector3Int))
+			{
+				output = new Vector3Int(reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());
+			}
 			else if (typeof(IList).IsAssignableFrom(type))
 			{
 				int count = reader.ReadInt32();
@@ -244,12 +260,19 @@ namespace NetState
 			{
 				writer.Write((string)value);
 			}
-			/*
-			else if (type == typeof(NetStateObject))
+			else if (type == typeof(Vector2Int))
 			{
-				writer.Write((uint)((NetStateObject)value).id);
+				var v = (Vector2Int)value;
+				writer.Write(v.x);
+				writer.Write(v.y);
 			}
-			*/
+			else if (type == typeof(Vector3Int))
+			{
+				var v = (Vector3Int)value;
+				writer.Write(v.x);
+				writer.Write(v.y);
+				writer.Write(v.z);
+			}
 			else if (typeof(IList).IsAssignableFrom(type))
 			{
 				IList list = (IList)value;
