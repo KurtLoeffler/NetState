@@ -14,5 +14,10 @@ namespace NetState
 		public NetworkEventType eventType;
 		public NetworkError error;
 		public byte[] data;
+
+		public string GetDataString()
+		{
+			return System.Text.Encoding.UTF8.GetString(data);
+		}
 	}
 }

@@ -41,10 +41,10 @@ namespace NetState
 			return packet;
 		}
 
-		public byte[] SerializeToByteArray()
+		public byte[] Serialize()
 		{
-			MemoryStream stream = new MemoryStream();
-			BinaryWriter writer = new BinaryWriter(stream);
+			var stream = new MemoryStream();
+			var writer = new BinaryWriter(stream);
 
 			Serialize(writer);
 
@@ -54,6 +54,19 @@ namespace NetState
 			stream.Close();
 
 			return bytes;
+		}
+
+		public void Deserialize()
+		{
+			var stream = new MemoryStream();
+			var reader = new BinaryReader(stream);
+
+			Deserialize(reader);
+
+			byte[] bytes = stream.ToArray();
+
+			reader.Close();
+			stream.Close();
 		}
 
 		public void Serialize(BinaryWriter writer)
@@ -67,7 +80,7 @@ namespace NetState
 		public void Deserialize(BinaryReader reader)
 		{
 			int packetTypeID = reader.ReadUInt16();
-			System.Type packetType = typeIDManager.TypeIDToType(packetTypeID);
+			var packetType = typeIDManager.TypeIDToType(packetTypeID);
 
 			if (packetType != GetType())
 			{
