@@ -71,20 +71,19 @@ namespace NetState
 
 		public void Serialize(BinaryWriter writer)
 		{
-			int id = typeIDManager.TypeToTypeID(GetType());
-			writer.Write((ushort)id);
+			typeIDManager.WriteID(writer, GetType());
 
 			OnSerialize(writer);
 		}
 
 		public void Deserialize(BinaryReader reader)
 		{
-			int packetTypeID = reader.ReadUInt16();
-			var packetType = typeIDManager.TypeIDToType(packetTypeID);
+			int packetTypeID = typeIDManager.ReadID(reader);
+			var packetType = typeIDManager.IDToType(packetTypeID);
 
 			if (packetType != GetType())
 			{
-				reader.BaseStream.Position -= 2;
+				reader.BaseStream.Position -= typeIDManager.idSize;
 				throw new System.Exception("Unexpected PacketType \""+packetType+"\" expected \""+GetType()+"\"");
 			}
 

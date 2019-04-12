@@ -11,10 +11,20 @@ namespace NetState
 		private Dictionary<int, Type> typeIDToType = new Dictionary<int, Type>();
 		private Dictionary<Type, int> typeToTypeID = new Dictionary<Type, int>();
 
-		public Comparison<Type> typeComparison { get; set; }
+		public int typeCount => typeIDToType.Count;
 
-		public TypeIDManager()
+		public Comparison<Type> typeComparison { get; set; }
+		public readonly int idSize;
+
+		public TypeIDManager(int idSize = 2)
 		{
+			if (idSize != 1 && idSize != 2 && idSize != 4)
+			{
+				throw new ArgumentException("Must be 1, 3, or 4", nameof(idSize));
+			}
+
+			this.idSize = idSize;
+
 			typeIDToType.Clear();
 			typeToTypeID.Clear();
 
@@ -50,14 +60,14 @@ namespace NetState
 			}
 		}
 
-		public Type TypeIDToType(int typeID)
+		public Type IDToType(int typeID)
 		{
 			Type type;
 			typeIDToType.TryGetValue(typeID, out type);
 			return type;
 		}
 
-		public int TypeToTypeID(Type type)
+		public int TypeToID(Type type)
 		{
 			int id;
 			if (!typeToTypeID.TryGetValue(type, out id))
@@ -69,16 +79,16 @@ namespace NetState
 
 		public InstanceType CreateInstance<InstanceType>(int id) where InstanceType : T
 		{
-			Type type = TypeIDToType(id);
+			Type type = IDToType(id);
 			if (type == null)
 			{
-				return default(InstanceType);
+				return default;
 			}
 
 			Type resultType = typeof(InstanceType);
 			if (resultType.IsValueType)
 			{
-				return default(InstanceType);
+				return default;
 			}
 			else
 			{
@@ -88,7 +98,7 @@ namespace NetState
 
 		public T CreateInstance(int id)
 		{
-			Type type = TypeIDToType(id);
+			Type type = IDToType(id);
 			return (T)Activator.CreateInstance(type);
 		}
 
@@ -96,5 +106,53 @@ namespace NetState
 		{
 			return a.FullName.CompareTo(b.FullName);
 		}
+
+		public int ReadID(BinaryReader reader)
+		{
+			int id = 0;
+			if (idSize == 1)
+			{
+				id = reader.ReadByte();
+			}
+			else if (idSize == 2)
+			{
+				id = reader.ReadUInt16();
+			}
+			else if (idSize == 4)
+			{
+				id = (int)reader.ReadUInt32();
+			}
+			return id;
+		}
+
+		public int PeekID(BinaryReader reader)
+		{
+			int id = ReadID(reader);
+			reader.BaseStream.Position -= idSize;
+			return id;
+		}
+
+		public void WriteID(BinaryWriter writer, int typeID)
+		{
+			if (idSize == 1)
+			{
+				writer.Write((byte)typeID);
+			}
+			else if (idSize == 2)
+			{
+				writer.Write((ushort)typeID);
+			}
+			else if (idSize == 4)
+			{
+				writer.Write((uint)typeID);
+			}
+		}
+
+		public void WriteID(BinaryWriter writer, Type type)
+		{
+			int typeID = TypeToID(type);
+			WriteID(writer, typeID);
+		}
+
 	}
 }

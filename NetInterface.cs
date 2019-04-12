@@ -150,7 +150,7 @@ namespace NetState
 			return error;
 		}
 
-		private static byte[] dataBuffer = new byte[1024*16];
+		private static byte[] dataBuffer = new byte[0xffff-1];
 		private List<NetEvent> eventQueue = new List<NetEvent>();
 		public void Update()
 		{
@@ -199,11 +199,25 @@ namespace NetState
 				{
 					isConnected = true;
 
-					onConnected?.Invoke(networkEvent);
+					try
+					{
+						onConnected?.Invoke(networkEvent);
+					}
+					catch (System.Exception ex)
+					{
+						Debug.LogException(ex);
+					}
 				}
 				else if (networkEvent.eventType == NetworkEventType.DisconnectEvent)
 				{
-					onDisconnected?.Invoke(networkEvent);
+					try
+					{
+						onDisconnected?.Invoke(networkEvent);
+					}
+					catch (System.Exception ex)
+					{
+						Debug.LogException(ex);
+					}
 
 					isConnected = false;
 					connectionID = -1;
@@ -224,7 +238,14 @@ namespace NetState
 					reader.Close();
 					stream.Close();
 
-					onPacket?.Invoke(packet);
+					try
+					{
+						onPacket?.Invoke(packet);
+					}
+					catch (System.Exception ex)
+					{
+						Debug.LogException(ex);
+					}
 				}
 			}
 			eventQueue.Clear();

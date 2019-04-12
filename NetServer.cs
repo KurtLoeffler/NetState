@@ -7,23 +7,12 @@ using UnityEngine;
 namespace NetState
 {
 	[DefaultExecutionOrder(-2)]
-	public class NetServer : MonoBehaviour
+	public class NetServer : NetBase
 	{
-		public NetInterface netInterface;
-		public int desiredPort;
 		public int maxConnections = 12;
 		public bool startServerOnStart = true;
 
-		public List<ClientInfo> clientInfos = new List<ClientInfo>();
-		public ClientInfo GetClientInfo(int id)
-		{
-			return clientInfos.FirstOrDefault(v => v.id == id);
-		}
-
-		protected virtual void Awake()
-		{
-			SetupNetInterface();
-		}
+		public List<int> connectedClientIDs { get; } = new List<int>();
 
 		protected virtual void Start()
 		{
@@ -33,39 +22,32 @@ namespace NetState
 			}
 		}
 
-		protected virtual void SetupNetInterface()
-		{
-			netInterface = new NetInterface();
-			netInterface.onConnected += OnClientConnect;
-			netInterface.onDisconnected += OnClientDisconnect;
-			netInterface.onPacket += OnClientPacket;
-		}
-
 		public void StartServer()
 		{
-			netInterface.StartHost(desiredPort, maxConnections);
+			netInterface.StartHost(port, maxConnections);
 		}
 
-		protected virtual void Update()
+		protected override void OnConnect(NetEvent networkEvent)
 		{
-			netInterface.Update();
+			connectedClientIDs.Add(networkEvent.connectionID);
 		}
 
-		protected virtual void OnClientConnect(NetEvent networkEvent)
+		protected override void OnDisconnect(NetEvent networkEvent)
 		{
-			ClientInfo clientInfo = new ClientInfo(networkEvent.connectionID);
-			clientInfos.Add(clientInfo);
+			connectedClientIDs.Remove(networkEvent.connectionID);
 		}
 
-		protected virtual void OnClientDisconnect(NetEvent networkEvent)
+		public void BroadcastPacket(string channel, NetPacket packet)
 		{
-			ClientInfo clientInfo = GetClientInfo(networkEvent.connectionID);
-			clientInfos.Remove(clientInfo);
+			BroadcastPacket(netInterface.GetChannel(channel).id, packet);
 		}
 
-		protected virtual void OnClientPacket(NetPacket packet)
+		public void BroadcastPacket(int channelID, NetPacket packet)
 		{
-
+			foreach (var id in connectedClientIDs)
+			{
+				SendPacket(id, channelID, packet);
+			}
 		}
 	}
 }

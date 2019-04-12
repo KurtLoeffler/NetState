@@ -6,25 +6,12 @@ using UnityEngine;
 namespace NetState
 {
 	[DefaultExecutionOrder(-1)]
-	public class NetClient : MonoBehaviour
+	public class NetClient : NetBase
 	{
-		public NetInterface netInterface;
 		public string serverAddress = "127.0.0.1";
-		public int serverPort;
 		public bool connectOnStart = true;
 
-		protected virtual void Awake()
-		{
-			SetupNetInterface();
-		}
-
-		protected virtual void SetupNetInterface()
-		{
-			netInterface = new NetInterface();
-			netInterface.onConnected += OnConnect;
-			netInterface.onDisconnected += OnDisconnect;
-			netInterface.onPacket += OnPacket;
-		}
+		public virtual bool isConnected => netInterface != null && netInterface.isConnected;
 
 		protected virtual void Start()
 		{
@@ -37,27 +24,17 @@ namespace NetState
 		public void Connect()
 		{
 			netInterface.StartHost(0, 1);
-			netInterface.Connect(serverAddress, serverPort);
+			netInterface.Connect(serverAddress, port);
 		}
 
-		protected virtual void Update()
+		public void SendPacket(string channel, NetPacket packet)
 		{
-			netInterface.Update();
+			SendPacket(netInterface.connectionID, channel, packet);
 		}
 
-		protected virtual void OnConnect(NetEvent networkEvent)
+		public void SendPacket(int channelID, NetPacket packet)
 		{
-
-		}
-
-		protected virtual void OnDisconnect(NetEvent networkEvent)
-		{
-
-		}
-
-		protected virtual void OnPacket(NetPacket packet)
-		{
-
+			SendPacket(netInterface.connectionID, channelID, packet);
 		}
 	}
 }
