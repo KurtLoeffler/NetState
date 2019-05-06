@@ -10,13 +10,9 @@ using UnityEngine;
 
 namespace NetState
 {
-	public static class NetDataUtility
+	public static class DynamicNetSerialization
 	{
-		[AttributeUsage(AttributeTargets.Field|AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
-		sealed class NetMaskableAttribute : Attribute
-		{
-
-		}
+		
 
 		public class Field
 		{
@@ -29,7 +25,7 @@ namespace NetState
 			public List<Field> fields = new List<Field>();
 			public int maskableFieldCount;
 		}
-		public static TypeIDManager<INetData> typeIDManager = new TypeIDManager<INetData>();
+		
 		private static Dictionary<Type, TypeInfo> typeInfoDict = new Dictionary<Type, TypeInfo>();
 
 		public delegate void SerializeFunctionDelegate(BinaryWriter writer, object value);
@@ -38,21 +34,21 @@ namespace NetState
 
 		private static Dictionary<Type, (SerializeFunctionDelegate serializer, DeserializeFunctionDelegate deserializer)> defaultCustomSerializers = new Dictionary<Type, (SerializeFunctionDelegate serializer, DeserializeFunctionDelegate deserializer)>
 		{
-			{ typeof(Vector2), ((writer, value) => { var v = (Vector2)value; writer.Write(v.x); writer.Write(v.y); }, (reader) => { return new Vector2(reader.ReadSingle(), reader.ReadSingle());}) },
-			{ typeof(Vector3), ((writer, value) => { var v = (Vector3)value; writer.Write(v.x); writer.Write(v.y); writer.Write(v.z); }, (reader) => { return new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
-			{ typeof(Vector4), ((writer, value) => { var v = (Vector4)value; writer.Write(v.x); writer.Write(v.y); writer.Write(v.z); writer.Write(v.w); }, (reader) => { return new Vector4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
+			{ typeof(Vector2), ((writer, value) => { var v = (Vector2)value; writer.WriteSingle(v.x); writer.WriteSingle(v.y); }, (reader) => { return new Vector2(reader.ReadSingle(), reader.ReadSingle());}) },
+			{ typeof(Vector3), ((writer, value) => { var v = (Vector3)value; writer.WriteSingle(v.x); writer.WriteSingle(v.y); writer.WriteSingle(v.z); }, (reader) => { return new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
+			{ typeof(Vector4), ((writer, value) => { var v = (Vector4)value; writer.WriteSingle(v.x); writer.WriteSingle(v.y); writer.WriteSingle(v.z); writer.WriteSingle(v.w); }, (reader) => { return new Vector4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
 
 			{ typeof(Vector2Int), ((writer, value) => { var v = (Vector2Int)value; writer.Write(v.x); writer.Write(v.y); }, (reader) => { return new Vector2Int(reader.ReadInt32(), reader.ReadInt32());}) },
 			{ typeof(Vector3Int), ((writer, value) => { var v = (Vector3Int)value; writer.Write(v.x); writer.Write(v.y); writer.Write(v.z); }, (reader) => { return new Vector3Int(reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());}) },
 
-			{ typeof(Quaternion), ((writer, value) => { var v = (Quaternion)value; writer.Write(v.x); writer.Write(v.y); writer.Write(v.z); writer.Write(v.w); }, (reader) => { return new Quaternion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
-			{ typeof(Plane), ((writer, value) => { var v = (Plane)value; writer.Write(v.normal.x); writer.Write(v.normal.y); writer.Write(v.normal.z); writer.Write(v.distance); }, (reader) => { return new Plane(new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()), reader.ReadSingle());}) },
+			{ typeof(Quaternion), ((writer, value) => { var v = (Quaternion)value; writer.WriteSingle(v.x); writer.WriteSingle(v.y); writer.WriteSingle(v.z); writer.WriteSingle(v.w); }, (reader) => { return new Quaternion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
+			{ typeof(Plane), ((writer, value) => { var v = (Plane)value; writer.WriteSingle(v.normal.x); writer.WriteSingle(v.normal.y); writer.WriteSingle(v.normal.z); writer.WriteSingle(v.distance); }, (reader) => { return new Plane(new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()), reader.ReadSingle());}) },
 
-			{ typeof(Color), ((writer, value) => { var v = (Color)value; writer.Write(v.r); writer.Write(v.g); writer.Write(v.b); writer.Write(v.a); }, (reader) => { return new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
+			{ typeof(Color), ((writer, value) => { var v = (Color)value; writer.WriteSingle(v.r); writer.WriteSingle(v.g); writer.WriteSingle(v.b); writer.WriteSingle(v.a); }, (reader) => { return new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());}) },
 			{ typeof(Color32), ((writer, value) => { var v = (Color32)value; writer.Write(v.r); writer.Write(v.g); writer.Write(v.b); writer.Write(v.a); }, (reader) => { return new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());}) },
 		};
 
-		static NetDataUtility()
+		static DynamicNetSerialization()
 		{
 			AddDefaultCustomSerializers();
 		}
@@ -188,7 +184,7 @@ namespace NetState
 				}
 				else if (type == typeof(double))
 				{
-					writer.Write((double)value);
+					writer.WriteDouble((double)value);
 				}
 				else if (type == typeof(short))
 				{
@@ -208,7 +204,7 @@ namespace NetState
 				}
 				else if (type == typeof(float))
 				{
-					writer.Write((float)value);
+					writer.WriteSingle((float)value);
 				}
 				else if (type == typeof(ushort))
 				{
@@ -244,7 +240,7 @@ namespace NetState
 			{
 				if (typeof(INetData).IsAssignableFrom(type))
 				{
-					typeIDManager.WriteID(writer, type);
+					NetSerialization.netDataTypeIDManager.WriteID(writer, type);
 				}
 
 				WriteFields(value, writer);
@@ -264,8 +260,8 @@ namespace NetState
 
 		public static void DeserializeOverwrite(INetData netData, BinaryReader reader)
 		{
-			int readTypeID = typeIDManager.ReadID(reader);
-			Type readType = typeIDManager.IDToType(readTypeID);
+			int readTypeID = NetSerialization.netDataTypeIDManager.ReadID(reader);
+			Type readType = NetSerialization.netDataTypeIDManager.IDToType(readTypeID);
 			Type expectedType = netData.GetType();
 
 			if (expectedType != readType)
@@ -376,8 +372,8 @@ namespace NetState
 				
 				if (typeof(INetData).IsAssignableFrom(type))
 				{
-					int typeID = typeIDManager.ReadID(reader);
-					output = typeIDManager.CreateInstance(typeID);
+					int typeID = NetSerialization.netDataTypeIDManager.ReadID(reader);
+					output = NetSerialization.netDataTypeIDManager.CreateInstance(typeID);
 				}
 				else
 				{

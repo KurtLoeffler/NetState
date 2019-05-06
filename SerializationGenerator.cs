@@ -11,7 +11,7 @@ using System.Text;
 namespace NetState
 {
 	[AttributeUsage(AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
-	sealed class GenerateNetSerializerAttribute : Attribute
+	public sealed class GenerateNetSerializerAttribute : Attribute
 	{
 
 	}
@@ -33,6 +33,7 @@ namespace NetState
 			public FieldInfo fieldInfo;
 			public int maskIndex;
 		}
+		//[GenerateNetSerializer]
 		public struct TestStruct<A, B, C>
 		{
 			public int test;
@@ -59,14 +60,14 @@ namespace NetState
 
 				typeInfo.qualifiedName = GetCSharpName(type);
 
-				var fieldInfoArray = type.GetFields(BindingFlags.Instance|BindingFlags.Public);
+				var fieldInfoArray = type.GetFields(BindingFlags.Instance|BindingFlags.Public|BindingFlags.FlattenHierarchy);
 				foreach (var fieldInfo in fieldInfoArray)
 				{
 					if (fieldInfo.GetCustomAttribute<NonSerializedAttribute>(true) != null)
 					{
 						continue;
 					}
-
+					
 					var dataType = Field.DataType.Struct;
 					if (fieldInfo.FieldType.IsPrimitive)
 					{
@@ -91,7 +92,7 @@ namespace NetState
 			return typeInfo;
 		}
 
-		public static void GenerateSerializers(string path, IEnumerable<Type> additionalTypes)
+		public static string GenerateSerializers(IEnumerable<Type> additionalTypes = null)
 		{
 
 			HashSet<Type> allTypes = new HashSet<Type>();
@@ -104,9 +105,20 @@ namespace NetState
 					{
 						try
 						{
-							if (type.GetCustomAttribute<GenerateNetSerializerAttribute>(true) == null)
+							if (type.IsInterface)
 							{
 								continue;
+							}
+							if (type.IsAbstract)
+							{
+								continue;
+							}
+							if (type.GetCustomAttribute<GenerateNetSerializerAttribute>(true) == null)
+							{
+								if (!typeof(INetData).IsAssignableFrom(type) && !typeof(NetPacket).IsAssignableFrom(type))
+								{
+									continue;
+								}
 							}
 
 							allTypes.Add(type);
@@ -142,6 +154,23 @@ namespace NetState
 				}
 			}
 
+			//Create collection variants of all non collection types.
+			var allTypesCopy = allTypes.ToArray();
+			foreach (var type in allTypesCopy)
+			{
+				if (typeof(IList).IsAssignableFrom(type))
+				{
+					continue;
+				}
+				var listType = typeof(List<>).MakeGenericType(type);
+				if (!allTypes.Contains(listType))
+				{
+					allTypes.Add(listType);
+				}
+			}
+
+			allTypes.Remove(typeof(string));
+
 			var writer = new StringWriter();
 			writer.Write(@"
 using System;
@@ -160,7 +189,7 @@ using System.Linq;
 			indent++;
 
 			WriteIndent(indent, writer);
-			writer.WriteLine("public partial class TypeSerializers {");
+			writer.WriteLine("public class TypeSerializers : NetState.TypeSerializers {");
 
 			indent++;
 
@@ -179,16 +208,10 @@ using System.Linq;
 			WriteIndent(indent, writer);
 			writer.WriteLine("}");
 
-			string basePath = new DirectoryInfo(path).Parent.FullName;
-			if (!Directory.Exists(basePath))
-			{
-				Directory.CreateDirectory(basePath);
-			}
-
 			var output = writer.ToString();
 			output = output.Replace("\r\n", "\n");
 
-			File.WriteAllText(path, output);
+			return output;
 		}
 
 		public static void FindReferencedTypes(Type type, HashSet<Type> referencedTypes)
@@ -217,33 +240,58 @@ using System.Linq;
 		public static void CreateSerializerFunctions(TypeInfo typeInfo, int indent, StringWriter writer)
 		{
 			WriteIndent(indent, writer);
-			writer.WriteLine($"public void Serialize({typeInfo.qualifiedName} value, BinaryWriter writer) {{");
+			writer.WriteLine($"public static void Serialize({typeInfo.qualifiedName} value, BinaryWriter writer) {{");
 
 			indent++;
+
+			if (typeof(INetData).IsAssignableFrom(typeInfo.type))
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine($"if (value.GetType() != typeof({typeInfo.qualifiedName})) {{");
+				indent++;
+
+				WriteIndent(indent, writer);
+				writer.WriteLine("NetSerialization.Serialize((object)value, writer);");
+				WriteIndent(indent, writer);
+				writer.WriteLine($"return;");
+
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine($"}}");
+
+				
+			}
 
 			foreach (var field in typeInfo.fields)
 			{
 				WriteSerializeCode(field, indent, writer);
 			}
-			if (typeof(ICollection).IsAssignableFrom(typeInfo.type))
+			if (typeof(IList).IsAssignableFrom(typeInfo.type))
 			{
-				WriteIndent(indent, writer);
-				writer.WriteLine("{");
-				indent++;
-				var b = new byte[1];
-				var elementTypeName = GetCSharpName(typeInfo.type.GenericTypeArguments[0]);
+				var elementType = typeInfo.type.GenericTypeArguments[0];
+				var elementTypeName = GetCSharpName(elementType);
 				//WriteIndent(indent, writer);
 				//writer.WriteLine($"var list = (IList<{elementTypeName}>)value;");
 				WriteIndent(indent, writer);
-				writer.WriteLine("writer.Write(value.Count);");
+				writer.WriteLine("writer.Write((ushort)value.Count);");
 				WriteIndent(indent, writer);
 				writer.WriteLine("foreach (var item in value) {");
 				indent++;
-				WriteIndent(indent, writer);
-				writer.WriteLine("Serialize(item, writer);");
-				indent--;
-				WriteIndent(indent, writer);
-				writer.WriteLine("}");
+
+				if (elementType.IsPrimitive || elementType == typeof(string))
+				{
+					WriteIndent(indent, writer);
+					string functionName = TypeToWriteFunctionName(elementType);
+					writer.WriteLine($"writer.{functionName}(item);");
+				}
+				else
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"Serialize(item, writer);");
+				}
+
+				//WriteIndent(indent, writer);
+				//writer.WriteLine("Serialize(item, writer);");
 
 				indent--;
 				WriteIndent(indent, writer);
@@ -256,34 +304,90 @@ using System.Linq;
 			writer.WriteLine("}");
 
 			WriteIndent(indent, writer);
-			writer.WriteLine($"public void Deserialize({typeInfo.qualifiedName} value, BinaryReader reader) {{");
-
+			writer.WriteLine($"public static void Deserialize(ref {typeInfo.qualifiedName} value, BinaryReader reader) {{");
+			
 			indent++;
+
+			if (typeof(INetData).IsAssignableFrom(typeInfo.type))
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine($"if (value.GetType() != typeof({typeInfo.qualifiedName})) {{");
+				indent++;
+
+				WriteIndent(indent, writer);
+				writer.WriteLine($"value = ({typeInfo.qualifiedName})NetSerialization.Deserialize((object)value, reader);");
+				WriteIndent(indent, writer);
+				writer.WriteLine($"return;");
+
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine($"}}");
+			}
 
 			foreach (var field in typeInfo.fields)
 			{
 				WriteDeserializeCode(field, indent, writer);
 			}
+			if (typeof(IList).IsAssignableFrom(typeInfo.type))
+			{
+				var elementType = typeInfo.type.GenericTypeArguments[0];
+				var elementTypeName = GetCSharpName(elementType);
+
+				WriteIndent(indent, writer);
+				writer.WriteLine("var count = reader.ReadUInt16();");
+
+				WriteIndent(indent, writer);
+				writer.WriteLine("for (int i = 0; i < count; i++) {");
+				indent++;
+
+				if (elementType.IsPrimitive || elementType == typeof(string))
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"var element = reader.Read{elementType.Name}();");
+				}
+				else
+				{
+					if (typeof(INetData).IsAssignableFrom(elementType))
+					{
+						WriteIndent(indent, writer);
+						writer.WriteLine($"var element = NetSerialization.Deserialize<{elementTypeName}>(reader);");
+					}
+					else
+					{
+						WriteIndent(indent, writer);
+						writer.WriteLine($"var element = new {elementTypeName}();");
+
+						WriteIndent(indent, writer);
+						writer.WriteLine($"Deserialize(ref element, reader);");
+					}
+				}
+
+				WriteIndent(indent, writer);
+				writer.WriteLine($"value.Add(element);");
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine("}");
+			}
 
 			indent--;
 
 			WriteIndent(indent, writer);
 			writer.WriteLine("}");
+			writer.WriteLine("");
 		}
 
 		private static void WriteSerializeCode(Field field, int indent, StringWriter writer)
 		{
-			
-
-			if (field.dataType == Field.DataType.Primitive)
+			if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
 			{
 				WriteIndent(indent, writer);
-				writer.WriteLine($"writer.Write(value.{field.fieldInfo.Name});");
+				string functionName = TypeToWriteFunctionName(field.type);
+				writer.WriteLine($"writer.{functionName}(value.{field.fieldInfo.Name});");
 			}
 			else
 			{
 				WriteIndent(indent, writer);
-				writer.WriteLine("Serialize(value, writer);");
+				writer.WriteLine($"Serialize(value.{field.fieldInfo.Name}, writer);");
 			}
 		}
 		
@@ -296,9 +400,36 @@ using System.Linq;
 			}
 			else
 			{
-				WriteIndent(indent, writer);
-				writer.WriteLine("");
+				var fieldTypeName = GetCSharpName(field.type);
+
+				if (typeof(INetData).IsAssignableFrom(field.type))
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"value.{field.fieldInfo.Name} = NetSerialization.Deserialize<{fieldTypeName}>(reader);");
+				}
+				else
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"value.{field.fieldInfo.Name} = new {fieldTypeName}();");
+
+					WriteIndent(indent, writer);
+					writer.WriteLine($"Deserialize(ref value.{field.fieldInfo.Name}, reader);");
+				}
 			}
+		}
+
+		private static string TypeToWriteFunctionName(Type type)
+		{
+			string functionName = "Write";
+			if (type == typeof(float))
+			{
+				functionName = "WriteSingle";
+			}
+			else if (type == typeof(double))
+			{
+				functionName = "WriteDouble";
+			}
+			return functionName;
 		}
 
 		private static void WriteIndent(int indent, StringWriter writer)
@@ -340,7 +471,12 @@ using System.Linq;
 					sb.Append('<');
 					for (int i = 0; i < genArgs.Length; i++)
 					{
-						sb.Append(GetCSharpName(genArgs[i]));
+						//Debug.Log(genArgs[i].generic);
+						//throw new Exception();
+						//if (!type.IsGenericTypeDefinition)
+						{
+							sb.Append(GetCSharpName(genArgs[i]));
+						}
 						if (i < genArgs.Length-1)
 						{
 							sb.Append(", ");

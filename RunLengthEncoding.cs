@@ -6,14 +6,13 @@ namespace NetState
 {
 	public static class RunLengthEncoding
 	{
+		private static List<byte> byteList = new List<byte>(1024);
 		public static byte[] Encode(byte[] input)
 		{
-			var output = new List<byte>(input.Length);
-
 			for (int i = 0; i < input.Length; i++)
 			{
 				var inByte = input[i];
-				output.Add(inByte);
+				byteList.Add(inByte);
 
 				if (inByte == 0)
 				{
@@ -31,32 +30,34 @@ namespace NetState
 						}
 						runLength++;
 					}
-					output.Add(runLength);
+					byteList.Add(runLength);
 					i += runLength;
 				}
 			}
-			return output.ToArray();
+			var output = byteList.ToArray();
+			byteList.Clear();
+			return output;
 		}
 
 		public static byte[] Decode(byte[] input)
 		{
-			var output = new List<byte>(input.Length);
-
 			for (int i = 0; i < input.Length; i++)
 			{
 				var inByte = input[i];
-				output.Add(inByte);
+				byteList.Add(inByte);
 				if (inByte == 0)
 				{
 					i++;
 					byte runLength = input[i];
 					for (int j = 0; j < runLength; j++)
 					{
-						output.Add(0);
+						byteList.Add(0);
 					}
 				}
 			}
-			return output.ToArray();
+			var output = byteList.ToArray();
+			byteList.Clear();
+			return output;
 		}
 	}
 }
