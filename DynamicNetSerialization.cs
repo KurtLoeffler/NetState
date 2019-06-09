@@ -10,10 +10,9 @@ using UnityEngine;
 
 namespace NetState
 {
+#if false
 	public static class DynamicNetSerialization
 	{
-		
-
 		public class Field
 		{
 			public FieldInfo fieldInfo;
@@ -113,52 +112,6 @@ namespace NetState
 		{
 			customSerializersDict.Clear();
 		}
-
-		/*
-		public static INetData DeserializeNetData(BinaryReader reader)
-		{
-			int readTypeID = typeIDManager.PeekTypeID(reader);
-			INetData data = typeIDManager.CreateInstance(readTypeID);
-			DeserializeNetData(data, reader);
-			return data;
-		}
-
-		public static void DeserializeNetData(INetData netData, BinaryReader reader)
-		{
-			int readTypeID = typeIDManager.ReadTypeID(reader);
-			Type readType = typeIDManager.TypeIDToType(readTypeID);
-			Type expectedType = netData.GetType();
-
-			if (expectedType != readType)
-			{
-				throw new Exception($"Expected type {expectedType} but got type id {readTypeID} ({readType})");
-			}
-
-			DeserializeObject(netData, reader);
-		}
-
-		public static T DeserializeObject<T>(BinaryReader reader)
-		{
-			return (T)DeserializeObject(typeof(T), reader);
-		}
-
-		public static object DeserializeObject(Type type, BinaryReader reader)
-		{
-			object result = Activator.CreateInstance(type);
-			DeserializeObject(result, reader);
-			return result;
-		}
-
-		public static void DeserializeObject(object obj, BinaryReader reader)
-		{
-			Type type = obj.GetType();
-			var typeInfo = GetTypeInfo(type);
-			foreach (var field in typeInfo.fields)
-			{
-				field.fieldInfo.SetValue(obj, ReadValue(reader, field.fieldInfo.FieldType));
-			}
-		}
-		*/
 
 		public static void Serialize(object value, BinaryWriter writer)
 		{
@@ -386,4 +339,5 @@ namespace NetState
 			return output;
 		}
 	}
+#endif
 }

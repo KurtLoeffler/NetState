@@ -10,12 +10,6 @@ using System.Text;
 
 namespace NetState
 {
-	[AttributeUsage(AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
-	public sealed class GenerateNetSerializerAttribute : Attribute
-	{
-
-	}
-
 	public static class SerializationGenerator
 	{
 		[StructLayout(LayoutKind.Sequential)]
@@ -33,13 +27,6 @@ namespace NetState
 			public FieldInfo fieldInfo;
 			public int maskIndex;
 		}
-		//[GenerateNetSerializer]
-		public struct TestStruct<A, B, C>
-		{
-			public int test;
-			public A aInstance;
-			public List<Vector3> vectors;
-		}
 
 		public class TypeInfo
 		{
@@ -48,7 +35,6 @@ namespace NetState
 			public List<Field> fields = new List<Field>();
 		}
 
-		public static TypeIDManager<INetData> typeIDManager = new TypeIDManager<INetData>();
 		private static Dictionary<Type, TypeInfo> fieldLookupDict = new Dictionary<Type, TypeInfo>();
 
 		private static TypeInfo GetTypeInfo(Type type)
@@ -492,5 +478,4 @@ using System.Linq;
 			}
 		}
 	}
-
 }

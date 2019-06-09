@@ -11,6 +11,12 @@ namespace NetState
 	{
 	}
 
+	[AttributeUsage(AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
+	public sealed class GenerateNetSerializerAttribute : Attribute
+	{
+
+	}
+
 	[AttributeUsage(AttributeTargets.Field|AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
 	sealed class NetMaskableAttribute : Attribute
 	{
@@ -37,10 +43,8 @@ namespace NetState
 	{
 		public static TypeIDManager<INetData> netDataTypeIDManager = new TypeIDManager<INetData>();
 
-		private delegate void SerializerDelegate(object value, BinaryWriter writer);
-		private delegate void DeserializerDelegate(ref object value, BinaryReader reader);
-		private static Dictionary<System.Type, MethodInfo> serializerFunctionDict = new Dictionary<System.Type, MethodInfo>();
-		private static Dictionary<System.Type, MethodInfo> deserializerFunctionDict = new Dictionary<System.Type, MethodInfo>();
+		private static Dictionary<Type, MethodInfo> serializerFunctionDict = new Dictionary<Type, MethodInfo>();
+		private static Dictionary<Type, MethodInfo> deserializerFunctionDict = new Dictionary<Type, MethodInfo>();
 
 		static NetSerialization()
 		{
