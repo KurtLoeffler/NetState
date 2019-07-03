@@ -140,6 +140,7 @@ namespace NetState
 			return value;
 		}
 
+		private static object[] cachedArgumentArray = new object[2];
 		public static void Deserialize(ref object value, BinaryReader reader)
 		{
 			var type = value.GetType();
@@ -151,7 +152,6 @@ namespace NetState
 
 			if (deserializerFunctionDict.TryGetValue(type, out var deserializer))
 			{
-				object[] cachedArgumentArray = new object[2];
 				cachedArgumentArray[0] = value;
 				cachedArgumentArray[1] = reader;
 				deserializer.Invoke(null, cachedArgumentArray);
