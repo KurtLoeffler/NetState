@@ -20,7 +20,7 @@ namespace NetState
 		{
 			if (idSize != 1 && idSize != 2 && idSize != 4)
 			{
-				throw new ArgumentException("Must be 1, 3, or 4", nameof(idSize));
+				throw new ArgumentException("Must be 1, 2, or 4", nameof(idSize));
 			}
 
 			this.idSize = idSize;
