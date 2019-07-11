@@ -12,6 +12,8 @@ namespace NetState
 		private Dictionary<Type, int> typeToTypeID = new Dictionary<Type, int>();
 
 		public int typeCount => typeIDToType.Count;
+		public Dictionary<int, Type>.KeyCollection ids => typeIDToType.Keys;
+		public Dictionary<int, Type>.ValueCollection types => typeIDToType.Values;
 
 		public Comparison<Type> typeComparison { get; set; }
 		public readonly int idSize;
@@ -22,7 +24,7 @@ namespace NetState
 			{
 				throw new ArgumentException("Must be 1, 2, or 4", nameof(idSize));
 			}
-
+			
 			this.idSize = idSize;
 
 			typeIDToType.Clear();
