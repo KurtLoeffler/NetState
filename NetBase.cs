@@ -97,7 +97,7 @@ namespace NetState
 			if (sendBufferCache == null || sendBufferCache.Length < streamLength)
 			{
 				int arrayLength = Mathf.Max(streamLength*2, 1024);
-				sendBufferCache = new byte[streamLength*2];
+				sendBufferCache = new byte[arrayLength];
 			}
 			memoryStream.Read(sendBufferCache, 0, streamLength);
 
