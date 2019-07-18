@@ -323,6 +323,18 @@ using System.Linq;
 				writer.WriteLine("var count = reader.ReadUInt16();");
 
 				WriteIndent(indent, writer);
+				writer.WriteLine($"if (value.Capacity < count) {{");
+				indent++;
+
+				WriteIndent(indent, writer);
+				writer.WriteLine($"value.Capacity = count;");
+
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine($"}}");
+
+
+				WriteIndent(indent, writer);
 				writer.WriteLine("for (int i = 0; i < count; i++) {");
 				indent++;
 
@@ -396,7 +408,20 @@ using System.Linq;
 				else
 				{
 					WriteIndent(indent, writer);
+					if (field.fieldInfo.FieldType.IsClass)
+					{
+						writer.WriteLine($"if (value.{field.fieldInfo.Name} == null) {{");
+						indent++;
+						WriteIndent(indent, writer);
+					}
 					writer.WriteLine($"value.{field.fieldInfo.Name} = new {fieldTypeName}();");
+
+					if (field.fieldInfo.FieldType.IsClass)
+					{
+						indent--;
+						WriteIndent(indent, writer);
+						writer.WriteLine($"}}");
+					}
 
 					WriteIndent(indent, writer);
 					writer.WriteLine($"Deserialize(ref value.{field.fieldInfo.Name}, reader);");
