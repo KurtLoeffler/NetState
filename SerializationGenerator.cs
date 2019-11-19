@@ -230,6 +230,7 @@ using System.Linq;
 
 			indent++;
 
+			/*
 			if (typeof(INetData).IsAssignableFrom(typeInfo.type))
 			{
 				WriteIndent(indent, writer);
@@ -247,6 +248,7 @@ using System.Linq;
 
 				
 			}
+			*/
 
 			foreach (var field in typeInfo.fields)
 			{
@@ -272,8 +274,16 @@ using System.Linq;
 				}
 				else
 				{
-					WriteIndent(indent, writer);
-					writer.WriteLine($"Serialize(item, writer);");
+					if (typeof(INetData).IsAssignableFrom(elementType))
+					{
+						WriteIndent(indent, writer);
+						writer.WriteLine($"NetSerialization.Serialize(item, writer);");
+					}
+					else
+					{
+						WriteIndent(indent, writer);
+						writer.WriteLine($"Serialize(item, writer);");
+					}
 				}
 
 				//WriteIndent(indent, writer);
@@ -294,6 +304,7 @@ using System.Linq;
 			
 			indent++;
 
+			/*
 			if (typeof(INetData).IsAssignableFrom(typeInfo.type))
 			{
 				WriteIndent(indent, writer);
@@ -309,7 +320,7 @@ using System.Linq;
 				WriteIndent(indent, writer);
 				writer.WriteLine($"}}");
 			}
-
+			*/
 			foreach (var field in typeInfo.fields)
 			{
 				WriteDeserializeCode(field, indent, writer);
@@ -384,8 +395,16 @@ using System.Linq;
 			}
 			else
 			{
-				WriteIndent(indent, writer);
-				writer.WriteLine($"Serialize(value.{field.fieldInfo.Name}, writer);");
+				if (typeof(INetData).IsAssignableFrom(field.type))
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"NetSerialization.Serialize(value.{field.fieldInfo.Name}, writer);");
+				}
+				else
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"Serialize(value.{field.fieldInfo.Name}, writer);");
+				}
 			}
 		}
 		
