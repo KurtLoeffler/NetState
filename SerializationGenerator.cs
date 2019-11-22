@@ -20,7 +20,8 @@ namespace NetState
 				None,
 				Class,
 				Struct,
-				Primitive
+				Primitive,
+				Enum
 			}
 			public Type type => fieldInfo.FieldType;
 			public DataType dataType;
@@ -58,6 +59,10 @@ namespace NetState
 					if (fieldInfo.FieldType.IsPrimitive)
 					{
 						dataType = Field.DataType.Primitive;
+					}
+					else if (fieldInfo.FieldType.IsEnum)
+					{
+						dataType = Field.DataType.Enum;
 					}
 					else if (fieldInfo.FieldType.IsClass)
 					{
@@ -202,7 +207,7 @@ using System.Linq;
 
 		public static void FindReferencedTypes(Type type, HashSet<Type> referencedTypes)
 		{
-			if (type.IsPrimitive)
+			if (type.IsPrimitive || type.IsEnum)
 			{
 				return;
 			}
@@ -266,7 +271,12 @@ using System.Linq;
 				writer.WriteLine("foreach (var item in value) {");
 				indent++;
 
-				if (elementType.IsPrimitive || elementType == typeof(string))
+				if (elementType.IsEnum)
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"writer.Write((int)item);");
+				}
+				else if (elementType.IsPrimitive || elementType == typeof(string))
 				{
 					WriteIndent(indent, writer);
 					string functionName = TypeToWriteFunctionName(elementType);
@@ -349,7 +359,12 @@ using System.Linq;
 				writer.WriteLine("for (int i = 0; i < count; i++) {");
 				indent++;
 
-				if (elementType.IsPrimitive || elementType == typeof(string))
+				if (elementType.IsEnum)
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"var element = ({elementTypeName})reader.ReadInt32();");
+				}
+				else if (elementType.IsPrimitive || elementType == typeof(string))
 				{
 					WriteIndent(indent, writer);
 					writer.WriteLine($"var element = reader.Read{elementType.Name}();");
@@ -387,7 +402,12 @@ using System.Linq;
 
 		private static void WriteSerializeCode(Field field, int indent, StringWriter writer)
 		{
-			if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
+			if (field.dataType == Field.DataType.Enum)
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine($"writer.Write((int)value.{field.fieldInfo.Name});");
+			}
+			else if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
 			{
 				WriteIndent(indent, writer);
 				string functionName = TypeToWriteFunctionName(field.type);
@@ -410,15 +430,20 @@ using System.Linq;
 		
 		private static void WriteDeserializeCode(Field field, int indent, StringWriter writer)
 		{
-			if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
+			var fieldTypeName = GetCSharpName(field.type);
+
+			if (field.dataType == Field.DataType.Enum)
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine($"value.{field.fieldInfo.Name} = ({fieldTypeName})reader.ReadInt32();");
+			}
+			else if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
 			{
 				WriteIndent(indent, writer);
 				writer.WriteLine($"value.{field.fieldInfo.Name} = reader.Read{field.type.Name}();");
 			}
 			else
 			{
-				var fieldTypeName = GetCSharpName(field.type);
-
 				if (typeof(INetData).IsAssignableFrom(field.type))
 				{
 					WriteIndent(indent, writer);

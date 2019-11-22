@@ -26,7 +26,6 @@ namespace NetState
 	public static class NetDataUtilityExtensions
 	{
 		//Mono allocates garbage when writing floats and doubles so cast to ints.
-		//Doesn't preserve endianness but who cares!!!
 		public static unsafe void WriteSingle(this BinaryWriter writer, float value)
 		{
 			uint dummy = *((uint*)&value);
