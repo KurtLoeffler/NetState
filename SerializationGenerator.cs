@@ -235,26 +235,6 @@ using System.Linq;
 
 			indent++;
 
-			/*
-			if (typeof(INetData).IsAssignableFrom(typeInfo.type))
-			{
-				WriteIndent(indent, writer);
-				writer.WriteLine($"if (value.GetType() != typeof({typeInfo.qualifiedName})) {{");
-				indent++;
-
-				WriteIndent(indent, writer);
-				writer.WriteLine("NetSerialization.Serialize((object)value, writer);");
-				WriteIndent(indent, writer);
-				writer.WriteLine($"return;");
-
-				indent--;
-				WriteIndent(indent, writer);
-				writer.WriteLine($"}}");
-
-				
-			}
-			*/
-
 			foreach (var field in typeInfo.fields)
 			{
 				WriteSerializeCode(field, indent, writer);
@@ -314,23 +294,6 @@ using System.Linq;
 			
 			indent++;
 
-			/*
-			if (typeof(INetData).IsAssignableFrom(typeInfo.type))
-			{
-				WriteIndent(indent, writer);
-				writer.WriteLine($"if (value.GetType() != typeof({typeInfo.qualifiedName})) {{");
-				indent++;
-
-				WriteIndent(indent, writer);
-				writer.WriteLine($"value = ({typeInfo.qualifiedName})NetSerialization.Deserialize((object)value, reader);");
-				WriteIndent(indent, writer);
-				writer.WriteLine($"return;");
-
-				indent--;
-				WriteIndent(indent, writer);
-				writer.WriteLine($"}}");
-			}
-			*/
 			foreach (var field in typeInfo.fields)
 			{
 				WriteDeserializeCode(field, indent, writer);
