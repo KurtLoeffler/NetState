@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace NetState
 {
-	public interface INetData
+	public interface INetStatePolymorphic
 	{
 
 	}

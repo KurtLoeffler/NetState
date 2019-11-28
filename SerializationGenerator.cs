@@ -104,9 +104,9 @@ namespace NetState
 							{
 								continue;
 							}
-							if (type.GetCustomAttribute<GenerateNetSerializerAttribute>(true) == null)
+							if (type.GetCustomAttribute<NetStateSerializeAttribute>(true) == null)
 							{
-								if (!typeof(INetData).IsAssignableFrom(type) && !typeof(NetPacket).IsAssignableFrom(type))
+								if (!typeof(INetStatePolymorphic).IsAssignableFrom(type) && !typeof(NetPacket).IsAssignableFrom(type))
 								{
 									continue;
 								}
@@ -184,9 +184,11 @@ using System.Linq;
 
 			indent++;
 
+			int typeIndex = 0;
 			foreach (var type in allTypes)
 			{
-				CreateSerializerFunctions(GetTypeInfo(type), indent, writer);
+				CreateSerializerFunctions(GetTypeInfo(type), indent, writer, typeIndex);
+				typeIndex++;
 			}
 
 			indent--;
@@ -228,7 +230,7 @@ using System.Linq;
 			}
 		}
 
-		public static void CreateSerializerFunctions(TypeInfo typeInfo, int indent, StringWriter writer)
+		public static void CreateSerializerFunctions(TypeInfo typeInfo, int indent, StringWriter writer, int typeIndex)
 		{
 			WriteIndent(indent, writer);
 			writer.WriteLine($"public static void Serialize({typeInfo.qualifiedName} value, BinaryWriter writer) {{");
@@ -264,7 +266,7 @@ using System.Linq;
 				}
 				else
 				{
-					if (typeof(INetData).IsAssignableFrom(elementType))
+					if (typeof(INetStatePolymorphic).IsAssignableFrom(elementType))
 					{
 						WriteIndent(indent, writer);
 						writer.WriteLine($"NetSerialization.Serialize(item, writer);");
@@ -290,6 +292,19 @@ using System.Linq;
 			writer.WriteLine("}");
 
 			WriteIndent(indent, writer);
+			writer.WriteLine($"public static void GenericSerialize{typeIndex}(object value, BinaryWriter writer) {{");
+
+			indent++;
+
+			WriteIndent(indent, writer);
+			writer.WriteLine($"Serialize(({typeInfo.qualifiedName})value, writer);");
+
+			indent--;
+
+			WriteIndent(indent, writer);
+			writer.WriteLine("}");
+
+			WriteIndent(indent, writer);
 			writer.WriteLine($"public static void Deserialize(ref {typeInfo.qualifiedName} value, BinaryReader reader) {{");
 			
 			indent++;
@@ -304,6 +319,9 @@ using System.Linq;
 				var elementTypeName = GetCSharpName(elementType);
 
 				WriteIndent(indent, writer);
+				writer.WriteLine($"value.Clear();");
+
+				WriteIndent(indent, writer);
 				writer.WriteLine("var count = reader.ReadUInt16();");
 
 				WriteIndent(indent, writer);
@@ -316,7 +334,6 @@ using System.Linq;
 				indent--;
 				WriteIndent(indent, writer);
 				writer.WriteLine($"}}");
-
 
 				WriteIndent(indent, writer);
 				writer.WriteLine("for (int i = 0; i < count; i++) {");
@@ -334,7 +351,7 @@ using System.Linq;
 				}
 				else
 				{
-					if (typeof(INetData).IsAssignableFrom(elementType))
+					if (typeof(INetStatePolymorphic).IsAssignableFrom(elementType))
 					{
 						WriteIndent(indent, writer);
 						writer.WriteLine($"var element = NetSerialization.Deserialize<{elementTypeName}>(reader);");
@@ -342,7 +359,7 @@ using System.Linq;
 					else
 					{
 						WriteIndent(indent, writer);
-						writer.WriteLine($"var element = new {elementTypeName}();");
+						writer.WriteLine($"var element = {GenerateAllocatorExpression(elementType)};");
 
 						WriteIndent(indent, writer);
 						writer.WriteLine($"Deserialize(ref element, reader);");
@@ -360,6 +377,26 @@ using System.Linq;
 
 			WriteIndent(indent, writer);
 			writer.WriteLine("}");
+
+			WriteIndent(indent, writer);
+			writer.WriteLine($"public static void GenericDeserialize{typeIndex}(ref object value, BinaryReader reader) {{");
+
+			indent++;
+
+			WriteIndent(indent, writer);
+			writer.WriteLine($"var castedValue = ({typeInfo.qualifiedName})value;");
+
+			WriteIndent(indent, writer);
+			writer.WriteLine($"Deserialize(ref castedValue, reader);");
+
+			WriteIndent(indent, writer);
+			writer.WriteLine($"value = (object)castedValue;");
+
+			indent--;
+
+			WriteIndent(indent, writer);
+			writer.WriteLine("}");
+
 			writer.WriteLine("");
 		}
 
@@ -378,7 +415,7 @@ using System.Linq;
 			}
 			else
 			{
-				if (typeof(INetData).IsAssignableFrom(field.type))
+				if (typeof(INetStatePolymorphic).IsAssignableFrom(field.type))
 				{
 					WriteIndent(indent, writer);
 					writer.WriteLine($"NetSerialization.Serialize(value.{field.fieldInfo.Name}, writer);");
@@ -407,7 +444,7 @@ using System.Linq;
 			}
 			else
 			{
-				if (typeof(INetData).IsAssignableFrom(field.type))
+				if (typeof(INetStatePolymorphic).IsAssignableFrom(field.type))
 				{
 					WriteIndent(indent, writer);
 					writer.WriteLine($"value.{field.fieldInfo.Name} = NetSerialization.Deserialize<{fieldTypeName}>(reader);");
@@ -421,7 +458,7 @@ using System.Linq;
 						indent++;
 						WriteIndent(indent, writer);
 					}
-					writer.WriteLine($"value.{field.fieldInfo.Name} = new {fieldTypeName}();");
+					writer.WriteLine($"value.{field.fieldInfo.Name} = {GenerateAllocatorExpression(field.type)};");
 
 					if (field.fieldInfo.FieldType.IsClass)
 					{
@@ -434,6 +471,24 @@ using System.Linq;
 					writer.WriteLine($"Deserialize(ref value.{field.fieldInfo.Name}, reader);");
 				}
 			}
+		}
+
+		private static string GenerateAllocatorExpression(Type type)
+		{
+			var fullTypeName = GetCSharpName(type);
+
+			var customAllocator = NetSerialization.GetCustomAllocator(type);
+			if (customAllocator != null)
+			{
+				var allocatorDeclaringType = customAllocator.Method.DeclaringType;
+				var allocatorDeclaringTypeFullName = GetCSharpName(allocatorDeclaringType);
+				return $"({fullTypeName}){allocatorDeclaringTypeFullName}.{customAllocator.Method.Name}(typeof({fullTypeName}));";
+			}
+			else
+			{
+				return $"new {fullTypeName}()";
+			}
+			
 		}
 
 		private static string TypeToWriteFunctionName(Type type)

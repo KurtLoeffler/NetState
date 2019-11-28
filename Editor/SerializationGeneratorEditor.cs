@@ -23,11 +23,30 @@ namespace NetState
 			}
 		}
 
+		public static bool deleteOnError
+		{
+			get
+			{
+				return EditorPrefs.GetBool("NetState.GenerateSerializersEditor.deleteOnError", true);
+			}
+			set
+			{
+				EditorPrefs.SetBool("NetState.GenerateSerializersEditor.deleteOnError", value);
+			}
+		}
+
 		[MenuItem("NetState/Auto Generate")]
 		public static void AutoGenerateMenuItem()
 		{
 			autoGenerate = !autoGenerate;
 			Menu.SetChecked("NetState/Auto Generate", autoGenerate);
+		}
+
+		[MenuItem("NetState/Delete On Error")]
+		public static void DeleteOnErrorMenuItem()
+		{
+			deleteOnError = !deleteOnError;
+			Menu.SetChecked("NetState/Delete On Error", deleteOnError);
 		}
 
 		[MenuItem("NetState/Regenerate Serializers")]
@@ -121,6 +140,11 @@ namespace NetState
 				Menu.SetChecked("NetState/Auto Generate", autoGenerate);
 			};
 
+			EditorApplication.delayCall += () =>
+			{
+				Menu.SetChecked("NetState/Delete On Error", deleteOnError);
+			};
+
 			Application.logMessageReceived -= OnlogMessageReceived;
 			Application.logMessageReceived += OnlogMessageReceived;
 		}
@@ -131,8 +155,12 @@ namespace NetState
 			{
 				if (File.Exists(path) && condition.Replace("\\", "/").ToLower().StartsWith(path.ToLower()))
 				{
-					Debug.LogWarning($"Deleting generated netstate serializers ({path}) because it contained compilation errors.");
-					AssetDatabase.DeleteAsset(path);
+					if (deleteOnError)
+					{
+						Debug.LogWarning($"Deleting generated netstate serializers ({path}) because it contained compilation errors.");
+						AssetDatabase.DeleteAsset(path);
+					}
+					
 					if (autoGenerate)
 					{
 						AssetDatabase.Refresh();

@@ -2,6 +2,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using UnityEngine;
 
@@ -12,13 +14,19 @@ namespace NetState
 	}
 
 	[AttributeUsage(AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
-	public sealed class GenerateNetSerializerAttribute : Attribute
+	public sealed class NetStateSerializeAttribute : Attribute
+	{
+
+	}
+
+	[AttributeUsage(AttributeTargets.Method, Inherited = true, AllowMultiple = false)]
+	public sealed class NetStateCustomAllocatorAttribute : Attribute
 	{
 
 	}
 
 	[AttributeUsage(AttributeTargets.Field|AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
-	sealed class NetMaskableAttribute : Attribute
+	sealed class NetStateMaskableAttribute : Attribute
 	{
 
 	}
@@ -40,10 +48,14 @@ namespace NetState
 
 	public static class NetSerialization
 	{
-		public static TypeIDManager<INetData> netDataTypeIDManager = new TypeIDManager<INetData>();
+		public static TypeIDManager<INetStatePolymorphic> polymorphicTypeIDManager = new TypeIDManager<INetStatePolymorphic>();
 
-		private static Dictionary<Type, MethodInfo> serializerFunctionDict = new Dictionary<Type, MethodInfo>();
-		private static Dictionary<Type, MethodInfo> deserializerFunctionDict = new Dictionary<Type, MethodInfo>();
+		public delegate void SerializeDelegate(object value, BinaryWriter writer);
+		public delegate void DeserializeDelegate(ref object value, BinaryReader reader);
+		public delegate object CustomAllocatorDelegate(Type type);
+		private static Dictionary<Type, SerializeDelegate> serializerFunctionDict = new Dictionary<Type, SerializeDelegate>();
+		private static Dictionary<Type, DeserializeDelegate> deserializerFunctionDict = new Dictionary<Type, DeserializeDelegate>();
+		private static Dictionary<Type, CustomAllocatorDelegate> customAllocatorDict = new Dictionary<Type, CustomAllocatorDelegate>();
 
 		static NetSerialization()
 		{
@@ -54,60 +66,93 @@ namespace NetState
 				{
 					foreach (Type type in assembly.GetTypes())
 					{
-						if (!typeof(TypeSerializers).IsAssignableFrom(type))
-						{
-							continue;
-						}
-
-						try
-						{
-							var methodInfos = type.GetMethods(BindingFlags.Static|BindingFlags.Public);
-
-							foreach (var methodInfo in methodInfos)
-							{
-								if (methodInfo.Name == "Serialize")
-								{
-									var firstParam = methodInfo.GetParameters()[0];
-									var valueType = firstParam.ParameterType;
-
-									serializerFunctionDict.Add(valueType, methodInfo);
-								}
-								else if (methodInfo.Name == "Deserialize")
-								{
-									var firstParam = methodInfo.GetParameters()[0];
-									var valueType = firstParam.ParameterType.GetElementType();
-
-									deserializerFunctionDict.Add(valueType, methodInfo);
-								}
-							}
-						}
-						catch {}
+						InitializeSerializerFunctions(type);
+						InitializeCustomAllocator(type);
 					}
 				}
-				catch { }
+				catch
+				{
+
+				}
 			}
 		}
 
-		//private static object[] cachedArgumentArray = new object[2];
+		private static void InitializeSerializerFunctions(Type type)
+		{
+			if (!typeof(TypeSerializers).IsAssignableFrom(type))
+			{
+				return;
+			}
+
+			try
+			{
+				var methodInfos = type.GetMethods(BindingFlags.Static|BindingFlags.Public);
+
+				for (int i = 0; i < methodInfos.Length; i++)
+				{
+					var methodInfo = methodInfos[i];
+					MethodInfo nextMethod = null;
+					if (i < methodInfos.Length-1)
+					{
+						nextMethod = methodInfos[i+1];
+					}
+					if (methodInfo.Name == "Serialize")
+					{
+						var firstParam = methodInfo.GetParameters()[0];
+						var valueType = firstParam.ParameterType;
+						var func = (SerializeDelegate)Delegate.CreateDelegate(typeof(SerializeDelegate), null, nextMethod);
+						serializerFunctionDict.Add(valueType, func);
+					}
+					else if (methodInfo.Name == "Deserialize")
+					{
+						var firstParam = methodInfo.GetParameters()[0];
+						var valueType = firstParam.ParameterType.GetElementType();
+						var func = (DeserializeDelegate)Delegate.CreateDelegate(typeof(DeserializeDelegate), null, nextMethod);
+						deserializerFunctionDict.Add(valueType, func);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Debug.LogException(ex);
+			}
+		}
+
+		private static void InitializeCustomAllocator(Type type)
+		{
+			var methodInfos = type.GetMethods(BindingFlags.Static|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.FlattenHierarchy);
+
+			foreach (var methodInfo in methodInfos)
+			{
+				if (methodInfo.GetCustomAttributes<NetStateCustomAllocatorAttribute>(true).Any())
+				{
+					var func = (CustomAllocatorDelegate)Delegate.CreateDelegate(typeof(CustomAllocatorDelegate), null, methodInfo);
+					customAllocatorDict.Add(type, func);
+				}
+			}
+		}
+
+		public static CustomAllocatorDelegate GetCustomAllocator(Type type)
+		{
+			customAllocatorDict.TryGetValue(type, out var result);
+			return result;
+		}
 
 		public static void Serialize(object value, BinaryWriter writer)
 		{
 			var type = value.GetType();
-			if (typeof(INetData).IsAssignableFrom(type))
+			if (typeof(INetStatePolymorphic).IsAssignableFrom(type))
 			{
-				netDataTypeIDManager.WriteID(writer, type);
+				polymorphicTypeIDManager.WriteID(writer, type);
 			}
 
 			if (serializerFunctionDict.TryGetValue(type, out var serializer))
 			{
-				object[] cachedArgumentArray = new object[2];
-				cachedArgumentArray[0] = value;
-				cachedArgumentArray[1] = writer;
-				serializer.Invoke(null, cachedArgumentArray);
+				serializer(value, writer);
 			}
 			else
 			{
-				Debug.LogWarning($"Cannot write type \"{type}\" because no serializer was found. Make sure generated serializers are up to date, and the type has a {nameof(GenerateNetSerializerAttribute)}.");
+				Debug.LogWarning($"Cannot write type \"{type}\" because no serializer was found. Make sure generated serializers are up to date, and the type has a {nameof(NetStateSerializeAttribute)}.");
 			}
 		}
 
@@ -118,17 +163,22 @@ namespace NetState
 
 		public static object Deserialize(Type type, BinaryReader reader)
 		{
-			object value = null;
-			if (typeof(INetData).IsAssignableFrom(type))
+			if (typeof(INetStatePolymorphic).IsAssignableFrom(type))
 			{
-				var id = netDataTypeIDManager.PeekID(reader);
-				value = netDataTypeIDManager.CreateInstance(id);
+				var id = polymorphicTypeIDManager.PeekID(reader);
+				type = polymorphicTypeIDManager.IDToType(id);
+			}
+			object value = null;
+			var customAllocator = GetCustomAllocator(type);
+			if (customAllocator != null)
+			{
+				value = customAllocator(type);
 			}
 			else
 			{
 				value = Activator.CreateInstance(type);
 			}
-			
+
 			Deserialize(ref value, reader);
 			return value;
 		}
@@ -139,26 +189,22 @@ namespace NetState
 			return value;
 		}
 
-		private static object[] cachedArgumentArray = new object[2];
 		public static void Deserialize(ref object value, BinaryReader reader)
 		{
 			var type = value.GetType();
 
-			if (typeof(INetData).IsAssignableFrom(type))
+			if (typeof(INetStatePolymorphic).IsAssignableFrom(type))
 			{
-				netDataTypeIDManager.ReadID(reader);
+				polymorphicTypeIDManager.ReadID(reader);
 			}
 
 			if (deserializerFunctionDict.TryGetValue(type, out var deserializer))
 			{
-				cachedArgumentArray[0] = value;
-				cachedArgumentArray[1] = reader;
-				deserializer.Invoke(null, cachedArgumentArray);
-				value = cachedArgumentArray[0];
+				deserializer(ref value, reader);
 			}
 			else
 			{
-				Debug.LogWarning($"Cannot read type \"{type}\" because no deserializer was found. Make sure generated serializers are up to date, and the type has a {nameof(GenerateNetSerializerAttribute)}.");
+				Debug.LogWarning($"Cannot read type \"{type}\" because no deserializer was found. Make sure generated serializers are up to date, and the type has a {nameof(NetStateSerializeAttribute)}.");
 			}
 		}
 	}
