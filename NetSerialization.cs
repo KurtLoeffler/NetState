@@ -25,8 +25,8 @@ namespace NetState
 
 	}
 
-	[AttributeUsage(AttributeTargets.Field|AttributeTargets.Class|AttributeTargets.Struct, Inherited = true, AllowMultiple = false)]
-	sealed class NetStateMaskableAttribute : Attribute
+	[AttributeUsage(AttributeTargets.Field, Inherited = true, AllowMultiple = false)]
+	public sealed class NetStateMaskableAttribute : Attribute
 	{
 
 	}
@@ -50,8 +50,8 @@ namespace NetState
 	{
 		public static TypeIDManager<INetStatePolymorphic> polymorphicTypeIDManager = new TypeIDManager<INetStatePolymorphic>();
 
-		public delegate void SerializeDelegate(object value, BinaryWriter writer);
-		public delegate void DeserializeDelegate(ref object value, BinaryReader reader);
+		public delegate void SerializeDelegate(object value, BinaryWriter writer, object deltaReference);
+		public delegate void DeserializeDelegate(ref object value, BinaryReader reader, object deltaReference);
 		public delegate object CustomAllocatorDelegate(Type type);
 		private static Dictionary<Type, SerializeDelegate> serializerFunctionDict = new Dictionary<Type, SerializeDelegate>();
 		private static Dictionary<Type, DeserializeDelegate> deserializerFunctionDict = new Dictionary<Type, DeserializeDelegate>();
@@ -138,7 +138,7 @@ namespace NetState
 			return result;
 		}
 
-		public static void Serialize(object value, BinaryWriter writer)
+		public static void Serialize(object value, BinaryWriter writer, object referenceObject = null)
 		{
 			var type = value.GetType();
 			if (typeof(INetStatePolymorphic).IsAssignableFrom(type))
@@ -148,7 +148,7 @@ namespace NetState
 
 			if (serializerFunctionDict.TryGetValue(type, out var serializer))
 			{
-				serializer(value, writer);
+				serializer(value, writer, referenceObject);
 			}
 			else
 			{
@@ -156,12 +156,12 @@ namespace NetState
 			}
 		}
 
-		public static T Deserialize<T>(BinaryReader reader)
+		public static T Deserialize<T>(BinaryReader reader, object referenceObject = null)
 		{
-			return (T)Deserialize(typeof(T), reader);
+			return (T)Deserialize(typeof(T), reader, referenceObject);
 		}
 
-		public static object Deserialize(Type type, BinaryReader reader)
+		public static object Deserialize(Type type, BinaryReader reader, object referenceObject = null)
 		{
 			if (typeof(INetStatePolymorphic).IsAssignableFrom(type))
 			{
@@ -179,17 +179,17 @@ namespace NetState
 				value = Activator.CreateInstance(type);
 			}
 
-			Deserialize(ref value, reader);
+			Deserialize(ref value, reader, referenceObject);
 			return value;
 		}
 
-		public static object Deserialize(object value, BinaryReader reader)
+		public static object Deserialize(object value, BinaryReader reader, object referenceObject = null)
 		{
-			Deserialize(ref value, reader);
+			Deserialize(ref value, reader, referenceObject);
 			return value;
 		}
 
-		public static void Deserialize(ref object value, BinaryReader reader)
+		public static void Deserialize(ref object value, BinaryReader reader, object referenceObject = null)
 		{
 			var type = value.GetType();
 
@@ -200,7 +200,7 @@ namespace NetState
 
 			if (deserializerFunctionDict.TryGetValue(type, out var deserializer))
 			{
-				deserializer(ref value, reader);
+				deserializer(ref value, reader, referenceObject);
 			}
 			else
 			{

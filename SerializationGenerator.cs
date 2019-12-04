@@ -24,6 +24,7 @@ namespace NetState
 				Enum
 			}
 			public Type type => fieldInfo.FieldType;
+			public string name => fieldInfo.Name;
 			public DataType dataType;
 			public FieldInfo fieldInfo;
 			public int maskIndex;
@@ -31,6 +32,7 @@ namespace NetState
 
 		public class TypeInfo
 		{
+			public bool hasMaskedFields => fields.Any(v => v.maskIndex >= 0);
 			public Type type;
 			public string qualifiedName;
 			public List<Field> fields = new List<Field>();
@@ -48,6 +50,7 @@ namespace NetState
 				typeInfo.qualifiedName = GetCSharpName(type);
 
 				var fieldInfoArray = type.GetFields(BindingFlags.Instance|BindingFlags.Public|BindingFlags.FlattenHierarchy);
+				var maskIndexCounter = 0;
 				foreach (var fieldInfo in fieldInfoArray)
 				{
 					if (fieldInfo.GetCustomAttribute<NonSerializedAttribute>(true) != null)
@@ -69,12 +72,19 @@ namespace NetState
 						dataType = Field.DataType.Class;
 					}
 
+					bool isMasked = fieldInfo.GetCustomAttribute<NetStateMaskableAttribute>(true) != null;
+					
 					var field = new Field
 					{
 						dataType = dataType,
 						fieldInfo = fieldInfo,
-						maskIndex = -1
+						maskIndex = isMasked ? maskIndexCounter : -1
 					};
+
+					if (isMasked)
+					{
+						maskIndexCounter++;
+					}
 
 					typeInfo.fields.Add(field);
 				}
@@ -233,13 +243,57 @@ using System.Linq;
 		public static void CreateSerializerFunctions(TypeInfo typeInfo, int indent, StringWriter writer, int typeIndex)
 		{
 			WriteIndent(indent, writer);
-			writer.WriteLine($"public static void Serialize({typeInfo.qualifiedName} value, BinaryWriter writer) {{");
+			writer.WriteLine($"public static void Serialize({typeInfo.qualifiedName} value, BinaryWriter writer, {GetNullableDeclaration(typeInfo.type, "deltaReference")}) {{");
 
 			indent++;
 
+			if (typeInfo.hasMaskedFields)
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine("ulong mask = ~0UL;");
+
+				WriteIndent(indent, writer);
+				writer.WriteLine($"if ({GetNullableHasValueExpression(typeInfo.type, "deltaReference")}) {{");
+				indent++;
+
+				foreach (var field in typeInfo.fields.Where(v => v.maskIndex >= 0))
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"mask &= ~(((value.{field.name} == deltaReference.{field.name}) ? 1UL : 0UL) << {field.maskIndex});");
+				}
+
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine("}");
+
+				int highestIndex = typeInfo.fields.Select(v => v.maskIndex).Aggregate((a, b) => Mathf.Max(a, b));
+
+				WriteIndent(indent, writer);
+				if (highestIndex <= 8)
+				{
+					writer.WriteLine("writer.Write((byte)mask);");
+				}
+				else if (highestIndex <= 16)
+				{
+					writer.WriteLine("writer.Write((ushort)mask);");
+				}
+				else if (highestIndex <= 32)
+				{
+					writer.WriteLine("writer.Write((uint)mask);");
+				}
+				else if (highestIndex <= 64)
+				{
+					writer.WriteLine("writer.Write((ulong)mask);");
+				}
+				else
+				{
+					throw new Exception("Too many maskable fields.");
+				}
+			}
+
 			foreach (var field in typeInfo.fields)
 			{
-				WriteSerializeCode(field, indent, writer);
+				WriteFieldSerializeCode(field, indent, writer);
 			}
 			if (typeof(IList).IsAssignableFrom(typeInfo.type))
 			{
@@ -292,12 +346,12 @@ using System.Linq;
 			writer.WriteLine("}");
 
 			WriteIndent(indent, writer);
-			writer.WriteLine($"public static void GenericSerialize{typeIndex}(object value, BinaryWriter writer) {{");
+			writer.WriteLine($"public static void GenericSerialize{typeIndex}(object value, BinaryWriter writer, object deltaReference) {{");
 
 			indent++;
 
 			WriteIndent(indent, writer);
-			writer.WriteLine($"Serialize(({typeInfo.qualifiedName})value, writer);");
+			writer.WriteLine($"Serialize(({typeInfo.qualifiedName})value, writer, ({GetNullableDeclarationType(typeInfo.type)})deltaReference);");
 
 			indent--;
 
@@ -305,13 +359,40 @@ using System.Linq;
 			writer.WriteLine("}");
 
 			WriteIndent(indent, writer);
-			writer.WriteLine($"public static void Deserialize(ref {typeInfo.qualifiedName} value, BinaryReader reader) {{");
+			writer.WriteLine($"public static void Deserialize(ref {typeInfo.qualifiedName} value, BinaryReader reader, {GetNullableDeclaration(typeInfo.type, "deltaReference")}) {{");
 			
 			indent++;
 
+			if (typeInfo.hasMaskedFields)
+			{
+				int highestIndex = typeInfo.fields.Select(v => v.maskIndex).Aggregate((a, b) => Mathf.Max(a, b));
+				
+				WriteIndent(indent, writer);
+				if (highestIndex <= 8)
+				{
+					writer.WriteLine("ulong mask = reader.ReadByte();");
+				}
+				else if (highestIndex <= 16)
+				{
+					writer.WriteLine("ulong mask = reader.ReadUInt16();");
+				}
+				else if (highestIndex <= 32)
+				{
+					writer.WriteLine("ulong mask = reader.ReadUInt32();");
+				}
+				else if (highestIndex <= 64)
+				{
+					writer.WriteLine("ulong mask = reader.ReadUInt64();");
+				}
+				else
+				{
+					throw new Exception("Too many maskable fields.");
+				}
+			}
+
 			foreach (var field in typeInfo.fields)
 			{
-				WriteDeserializeCode(field, indent, writer);
+				WriteFieldDeserializeCode(field, indent, writer);
 			}
 			if (typeof(IList).IsAssignableFrom(typeInfo.type))
 			{
@@ -359,7 +440,7 @@ using System.Linq;
 					else
 					{
 						WriteIndent(indent, writer);
-						writer.WriteLine($"var element = {GenerateAllocatorExpression(elementType)};");
+						writer.WriteLine($"var element = {GetAllocatorExpression(elementType)};");
 
 						WriteIndent(indent, writer);
 						writer.WriteLine($"Deserialize(ref element, reader);");
@@ -379,7 +460,7 @@ using System.Linq;
 			writer.WriteLine("}");
 
 			WriteIndent(indent, writer);
-			writer.WriteLine($"public static void GenericDeserialize{typeIndex}(ref object value, BinaryReader reader) {{");
+			writer.WriteLine($"public static void GenericDeserialize{typeIndex}(ref object value, BinaryReader reader, object deltaReference) {{");
 
 			indent++;
 
@@ -387,7 +468,7 @@ using System.Linq;
 			writer.WriteLine($"var castedValue = ({typeInfo.qualifiedName})value;");
 
 			WriteIndent(indent, writer);
-			writer.WriteLine($"Deserialize(ref castedValue, reader);");
+			writer.WriteLine($"Deserialize(ref castedValue, reader, ({GetNullableDeclarationType(typeInfo.type)})deltaReference);");
 
 			WriteIndent(indent, writer);
 			writer.WriteLine($"value = (object)castedValue;");
@@ -400,65 +481,87 @@ using System.Linq;
 			writer.WriteLine("");
 		}
 
-		private static void WriteSerializeCode(Field field, int indent, StringWriter writer)
+		private static void WriteFieldSerializeCode(Field field, int indent, StringWriter writer)
 		{
+			if (field.maskIndex >= 0)
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine($"if (((mask >> {field.maskIndex}) & 0x01) != 0) {{");
+				indent++;
+			}
+
 			if (field.dataType == Field.DataType.Enum)
 			{
 				WriteIndent(indent, writer);
-				writer.WriteLine($"writer.Write((int)value.{field.fieldInfo.Name});");
+				writer.WriteLine($"writer.Write((int)value.{field.name});");
 			}
 			else if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
 			{
 				WriteIndent(indent, writer);
 				string functionName = TypeToWriteFunctionName(field.type);
-				writer.WriteLine($"writer.{functionName}(value.{field.fieldInfo.Name});");
+				writer.WriteLine($"writer.{functionName}(value.{field.name});");
 			}
 			else
 			{
 				if (typeof(INetStatePolymorphic).IsAssignableFrom(field.type))
 				{
 					WriteIndent(indent, writer);
-					writer.WriteLine($"NetSerialization.Serialize(value.{field.fieldInfo.Name}, writer);");
+					writer.WriteLine($"NetSerialization.Serialize(value.{field.name}, writer, deltaReference?.{field.name});");
 				}
 				else
 				{
 					WriteIndent(indent, writer);
-					writer.WriteLine($"Serialize(value.{field.fieldInfo.Name}, writer);");
+					writer.WriteLine($"Serialize(value.{field.name}, writer, deltaReference?.{field.name});");
 				}
+			}
+
+			if (field.maskIndex >= 0)
+			{
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine("}");
+				
 			}
 		}
 		
-		private static void WriteDeserializeCode(Field field, int indent, StringWriter writer)
+		private static void WriteFieldDeserializeCode(Field field, int indent, StringWriter writer)
 		{
 			var fieldTypeName = GetCSharpName(field.type);
+
+			if (field.maskIndex >= 0)
+			{
+				WriteIndent(indent, writer);
+				writer.WriteLine($"if (((mask >> {field.maskIndex}) & 0x01) != 0) {{");
+				indent++;
+			}
 
 			if (field.dataType == Field.DataType.Enum)
 			{
 				WriteIndent(indent, writer);
-				writer.WriteLine($"value.{field.fieldInfo.Name} = ({fieldTypeName})reader.ReadInt32();");
+				writer.WriteLine($"value.{field.name} = ({fieldTypeName})reader.ReadInt32();");
 			}
 			else if (field.dataType == Field.DataType.Primitive || field.type == typeof(string))
 			{
 				WriteIndent(indent, writer);
-				writer.WriteLine($"value.{field.fieldInfo.Name} = reader.Read{field.type.Name}();");
+				writer.WriteLine($"value.{field.name} = reader.Read{field.type.Name}();");
 			}
 			else
 			{
 				if (typeof(INetStatePolymorphic).IsAssignableFrom(field.type))
 				{
 					WriteIndent(indent, writer);
-					writer.WriteLine($"value.{field.fieldInfo.Name} = NetSerialization.Deserialize<{fieldTypeName}>(reader);");
+					writer.WriteLine($"value.{field.name} = NetSerialization.Deserialize<{fieldTypeName}>(reader, deltaReference?.{field.name});");
 				}
 				else
 				{
 					WriteIndent(indent, writer);
 					if (field.fieldInfo.FieldType.IsClass)
 					{
-						writer.WriteLine($"if (value.{field.fieldInfo.Name} == null) {{");
+						writer.WriteLine($"if (value.{field.name} == null) {{");
 						indent++;
 						WriteIndent(indent, writer);
 					}
-					writer.WriteLine($"value.{field.fieldInfo.Name} = {GenerateAllocatorExpression(field.type)};");
+					writer.WriteLine($"value.{field.name} = {GetAllocatorExpression(field.type)};");
 
 					if (field.fieldInfo.FieldType.IsClass)
 					{
@@ -468,12 +571,67 @@ using System.Linq;
 					}
 
 					WriteIndent(indent, writer);
-					writer.WriteLine($"Deserialize(ref value.{field.fieldInfo.Name}, reader);");
+					writer.WriteLine($"Deserialize(ref value.{field.name}, reader, deltaReference?.{field.name});");
 				}
+			}
+
+			if (field.maskIndex >= 0)
+			{
+				indent--;
+				WriteIndent(indent, writer);
+				writer.WriteLine("}");
+
 			}
 		}
 
-		private static string GenerateAllocatorExpression(Type type)
+		private static string GetNullableDeclarationType(Type type)
+		{
+			var typeName = GetCSharpName(type);
+			var sb = new StringBuilder();
+			sb.Append(typeName);
+			if (type.IsValueType)
+			{
+				sb.Append("?");
+			}
+			return sb.ToString();
+		}
+
+		private static string GetNullableDeclaration(Type type, string variableName)
+		{
+			var sb = new StringBuilder();
+			sb.Append(GetNullableDeclarationType(type));
+			sb.Append(" ");
+			sb.Append(variableName);
+			sb.Append(" = default");
+
+			return sb.ToString();
+		}
+
+		private static string GetNullableHasValueExpression(Type type, string baseExpression)
+		{
+			if (type.IsValueType)
+			{
+				return $"({baseExpression}).HasValue";
+			}
+			else
+			{
+				return $"({baseExpression}) != null";
+			}
+		}
+
+		private static string GetNullableValueExpression(Type type, string baseExpression)
+		{
+			if (type.IsValueType)
+			{
+				return $"({baseExpression}).Value";
+			}
+			else
+			{
+				return $"{baseExpression}";
+			}
+		}
+
+		private static string GetAllocatorExpression(Type type)
 		{
 			var fullTypeName = GetCSharpName(type);
 
