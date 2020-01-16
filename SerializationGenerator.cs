@@ -24,6 +24,7 @@ namespace NetState
 				Enum
 			}
 			public Type type => fieldInfo.FieldType;
+			public bool isBool => type == typeof(bool);
 			public string name => fieldInfo.Name;
 			public DataType dataType;
 			public FieldInfo fieldInfo;
@@ -49,15 +50,19 @@ namespace NetState
 
 				typeInfo.qualifiedName = GetCSharpName(type);
 
-				var fieldInfoArray = type.GetFields(BindingFlags.Instance|BindingFlags.Public|BindingFlags.FlattenHierarchy);
+				var fieldInfoArray = type.GetFields(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.FlattenHierarchy);
 				var maskIndexCounter = 0;
 				foreach (var fieldInfo in fieldInfoArray)
 				{
-					if (fieldInfo.GetCustomAttribute<NonSerializedAttribute>(true) != null)
+					if (fieldInfo.IsPrivate && fieldInfo.GetCustomAttribute<NetStateIncludeFieldAttribute>(true) == null)
 					{
 						continue;
 					}
-					
+					if (fieldInfo.GetCustomAttribute<NetStateExcludeFieldAttribute>(true) != null)
+					{
+						continue;
+					}
+
 					var dataType = Field.DataType.Struct;
 					if (fieldInfo.FieldType.IsPrimitive)
 					{
@@ -73,7 +78,8 @@ namespace NetState
 					}
 
 					bool isMasked = fieldInfo.GetCustomAttribute<NetStateMaskableAttribute>(true) != null;
-					
+					isMasked |= fieldInfo.FieldType == typeof(bool);
+
 					var field = new Field
 					{
 						dataType = dataType,
@@ -252,19 +258,34 @@ using System.Linq;
 				WriteIndent(indent, writer);
 				writer.WriteLine("ulong mask = ~0UL;");
 
-				WriteIndent(indent, writer);
-				writer.WriteLine($"if ({GetNullableHasValueExpression(typeInfo.type, "deltaReference")}) {{");
-				indent++;
-
 				foreach (var field in typeInfo.fields.Where(v => v.maskIndex >= 0))
 				{
-					WriteIndent(indent, writer);
-					writer.WriteLine($"mask &= ~(((value.{field.name} == deltaReference.{field.name}) ? 1UL : 0UL) << {field.maskIndex});");
+					if (field.type == typeof(bool))
+					{
+						WriteIndent(indent, writer);
+						writer.WriteLine($"mask &= ~(((value.{field.name}) ? 0UL : 1UL) << {field.maskIndex});");
+					}
 				}
 
-				indent--;
-				WriteIndent(indent, writer);
-				writer.WriteLine("}");
+				if (typeInfo.fields.Any(v => v.maskIndex >= 0 && !v.isBool))
+				{
+					WriteIndent(indent, writer);
+					writer.WriteLine($"if ({GetNullableHasValueExpression(typeInfo.type, "deltaReference")}) {{");
+					indent++;
+
+					foreach (var field in typeInfo.fields.Where(v => v.maskIndex >= 0))
+					{
+						if (field.type != typeof(bool))
+						{
+							WriteIndent(indent, writer);
+							writer.WriteLine($"mask &= ~(((value.{field.name} == deltaReference.{field.name}) ? 1UL : 0UL) << {field.maskIndex});");
+						}
+					}
+
+					indent--;
+					WriteIndent(indent, writer);
+					writer.WriteLine("}");
+				}
 
 				int highestIndex = typeInfo.fields.Select(v => v.maskIndex).Aggregate((a, b) => Mathf.Max(a, b));
 
@@ -483,6 +504,12 @@ using System.Linq;
 
 		private static void WriteFieldSerializeCode(Field field, int indent, StringWriter writer)
 		{
+			if (field.type == typeof(bool))
+			{
+				//Bools are written into the mask.
+				return;
+			}
+
 			if (field.maskIndex >= 0)
 			{
 				WriteIndent(indent, writer);
@@ -526,6 +553,14 @@ using System.Linq;
 		
 		private static void WriteFieldDeserializeCode(Field field, int indent, StringWriter writer)
 		{
+			if (field.type == typeof(bool))
+			{
+				//Bools are written into the mask so just read it from the mask.
+				WriteIndent(indent, writer);
+				writer.WriteLine($"value.{field.name} = ((mask >> {field.maskIndex}) & 0x01) != 0;");
+				return;
+			}
+
 			var fieldTypeName = GetCSharpName(field.type);
 
 			if (field.maskIndex >= 0)

@@ -18,15 +18,8 @@ namespace NetState
 		public Comparison<Type> typeComparison { get; set; }
 		public readonly int idSize;
 
-		public TypeIDManager(int idSize = 2)
+		public TypeIDManager()
 		{
-			if (idSize != 1 && idSize != 2 && idSize != 4)
-			{
-				throw new ArgumentException("Must be 1, 2, or 4", nameof(idSize));
-			}
-			
-			this.idSize = idSize;
-
 			typeIDToType.Clear();
 			typeToTypeID.Clear();
 
@@ -59,6 +52,16 @@ namespace NetState
 				Type type = allTypes[i];
 				typeIDToType.Add(i, type);
 				typeToTypeID.Add(type, i);
+			}
+
+			idSize = 4;
+			if (allTypes.Count < 65536)
+			{
+				idSize = 2;
+			}
+			if (allTypes.Count < 255)
+			{
+				idSize = 1;
 			}
 		}
 

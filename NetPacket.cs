@@ -32,8 +32,7 @@ namespace NetState
 
 		public static NetPacket ReadNext(BinaryReader reader)
 		{
-			int packetTypeID = reader.ReadUInt16();
-			reader.BaseStream.Position -= 2;
+			int packetTypeID = typeIDManager.PeekID(reader);
 
 			NetPacket packet = typeIDManager.CreateInstance(packetTypeID);
 			packet.Deserialize(reader);

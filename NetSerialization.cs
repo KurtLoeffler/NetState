@@ -19,6 +19,18 @@ namespace NetState
 
 	}
 
+	[AttributeUsage(AttributeTargets.Field, Inherited = true, AllowMultiple = false)]
+	public sealed class NetStateIncludeFieldAttribute : Attribute
+	{
+
+	}
+
+	[AttributeUsage(AttributeTargets.Field, Inherited = true, AllowMultiple = false)]
+	public sealed class NetStateExcludeFieldAttribute : Attribute
+	{
+
+	}
+
 	[AttributeUsage(AttributeTargets.Method, Inherited = true, AllowMultiple = false)]
 	public sealed class NetStateCustomAllocatorAttribute : Attribute
 	{
